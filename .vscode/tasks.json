@@ -1,0 +1,5 @@
+{
+	"version": "1.0.0",
+	"command": "src\\make.bat",
+	"isShellCommand": true,
+}
