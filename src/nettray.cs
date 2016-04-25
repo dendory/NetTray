@@ -7,6 +7,7 @@ using System.IO;
 using System.Text;
 using System.Drawing;
 using System.Reflection;
+using System.Diagnostics;
 using System.Windows.Forms;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -37,6 +38,7 @@ namespace NetTrayNS
 			tray_menu = new ContextMenu();
 			tray_menu.MenuItems.Add("Interfaces", interfaces);
 			tray_menu.MenuItems.Add("Latency", latency);
+			tray_menu.MenuItems.Add("Uptime", uptime);
 			tray_menu.MenuItems.Add("Refresh", refresh);
 			tray_menu.MenuItems.Add("About", about);
 			tray_menu.MenuItems.Add("-");
@@ -63,6 +65,24 @@ namespace NetTrayNS
 			tray_icon.Text = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip();
 		}
 
+		private void uptime(object sender, EventArgs e)
+		{
+			var uptime = new PerformanceCounter("System", "System Up Time");
+			uptime.NextValue();
+			if((uptime.NextValue()/60/60) > 24)
+			{
+				MessageBox.Show("System has been up for " + (int)(uptime.NextValue()/60/60/24) + " days.", "Uptime");
+			}
+			else if((uptime.NextValue()/60) > 60)
+			{
+				MessageBox.Show("System has been up for " + (int)(uptime.NextValue()/60/60) + " hours.", "Uptime");
+			}
+			else
+			{
+				MessageBox.Show("System has been up for " + (int)(uptime.NextValue()/60) + " minutes.", "Uptime");
+			}
+		}
+		
 		private void about(object sender, EventArgs e)
 		{
 			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a Ping function to <http://google.com>. Provided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
