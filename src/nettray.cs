@@ -6,26 +6,36 @@ using System;
 using System.IO;
 using System.Text;
 using System.Drawing;
+using System.Threading;
 using System.Reflection;
 using System.Diagnostics;
 using System.Windows.Forms;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Net.NetworkInformation;
+using Microsoft.Win32;
 
 [assembly: AssemblyTitle("NetTray")]
 [assembly: AssemblyCopyright("(C) 2016 Patrick Lambert")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace NetTrayNS
 {
 	public class NetTray : Form
 	{
-		private NotifyIcon tray_icon;
-		private ContextMenu tray_menu;
-		private int interval = 900; // interval between polling, in seconds
-		static System.Timers.Timer tray_timer;
+		private NotifyIcon tray_icon; // The tray icon itself
+		private ContextMenu tray_menu; // The right click menu
+		private int interval = 5; // Interval used to check public IP and latency
+		private string url = "www.google.com"; // URL to ping for latency
+		private int min_latency = 500; // Minimum latency (ms) until slow connection is reported
+		private int dis_len = 10; // How long (secs) to display info bubbles
+		private string cur_ips = ""; // Current public and private IPs
+		private string new_ips = ""; // Latest public and private IPs
+		private int con_state = 0; // Connection state (0 = all fine, 1 = slow latency, 2 = no reply)
+		private long cur_latency = -1; // Current latency (ms)
+		public RegistryKey rkey; // Registry key to read config values
 
 		[STAThread]
 		static void Main(string[] args)
@@ -35,7 +45,30 @@ namespace NetTrayNS
 
 		public NetTray()
 		{
-			tray_menu = new ContextMenu();
+			rkey = Registry.CurrentUser.OpenSubKey("Software\\NetTray"); // Location of config values
+			if(rkey == null) // Location does not exist, create config values
+			{
+				rkey = Registry.CurrentUser.CreateSubKey("Software\\NetTray");
+				rkey.SetValue("latency_check_url", url);
+				rkey.SetValue("check_interval_in_seconds", interval);
+				rkey.SetValue("minimal_latency_in_ms", min_latency);
+				rkey.SetValue("info_display_length_in_seconds", dis_len);
+			}
+			else // Try to load config from registry
+			{
+				try
+				{
+					url = (string)rkey.GetValue("latency_check_url");
+					interval = (int)rkey.GetValue("check_interval_in_seconds");
+					min_latency = (int)rkey.GetValue("minimal_latency_in_ms");
+					dis_len = (int)rkey.GetValue("info_display_length_in_seconds");
+				}
+				catch(Exception) // Display message but keep going
+				{
+					MessageBox.Show("An error occured while loading Registy settings. Using default values.", "NetTray");
+				}
+			}
+			tray_menu = new ContextMenu(); // Make tray menu
 			tray_menu.MenuItems.Add("Interfaces", interfaces);
 			tray_menu.MenuItems.Add("Latency", latency);
 			tray_menu.MenuItems.Add("Uptime", uptime);
@@ -43,76 +76,140 @@ namespace NetTrayNS
 			tray_menu.MenuItems.Add("About", about);
 			tray_menu.MenuItems.Add("-");
 			tray_menu.MenuItems.Add("Exit", exit);
-			tray_icon = new NotifyIcon();
+			tray_icon = new NotifyIcon(); // Make tray icon
 			tray_icon.Icon = new Icon(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("res.notify_icon"));
 			tray_icon.ContextMenu = tray_menu;
 			tray_icon.Visible = true;
-			tray_timer = new System.Timers.Timer(interval * 1000);
-			tray_timer.Elapsed += new System.Timers.ElapsedEventHandler(loop);
-			tray_icon.Text = "Fetching...";
-			tray_icon.Text = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip();
-			tray_timer.Start();
+			new_ips = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip(); // Get private and public IPs
+			tray_icon.Text = new_ips;
+			tray_icon.BalloonTipTitle = "NetTray"; // Show initial IPs info bubble
+			tray_icon.BalloonTipText = new_ips;
+			tray_icon.ShowBalloonTip(dis_len * 1000);
+			cur_ips = new_ips;
+			BackgroundWorker bw = new BackgroundWorker(); // Thread to check latency and IPs
+			bw.WorkerReportsProgress = true;
+			bw.DoWork += new DoWorkEventHandler(delegate(object o, DoWorkEventArgs args) // Enter thread here
+			{
+				BackgroundWorker b = o as BackgroundWorker;
+				Ping p = new Ping();
+				while(true) // Loop forever
+				{
+					PingReply r = p.Send(url);
+					if(r.Status == IPStatus.Success) // We got a ping reply
+					{
+						if(r.RoundtripTime > min_latency) // Latency is above minimum acceptable value
+						{
+							b.ReportProgress(1, "Slow network connection detected: " + r.RoundtripTime.ToString() + "ms.");
+						}
+						else // Latency is fine
+						{
+							b.ReportProgress(0, "Connection restored.");
+						}
+						cur_latency = r.RoundtripTime; // Store latency for later use
+					}
+					else // Timed out on the ping
+					{
+						b.ReportProgress(2, "No network connection detected.");
+					}
+					new_ips = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip(); // Get new IPs
+					tray_icon.Text = new_ips;
+					if(string.Compare(new_ips, cur_ips) != 0) // Check if new IPs are diff from old values
+					{
+						tray_icon.BalloonTipTitle = "NetTray";
+						tray_icon.BalloonTipText = new_ips;
+						tray_icon.ShowBalloonTip(dis_len * 1000);				
+					}
+					cur_ips = new_ips;
+					Thread.Sleep(interval * 1000); // Sleep this thread for interval time
+				}
+	        });
+			bw.ProgressChanged += new ProgressChangedEventHandler(delegate(object o, ProgressChangedEventArgs args) // Out of thread here
+			{
+				if(con_state != args.ProgressPercentage) // Check if state changed, if so show bubble with message from thread
+				{
+					tray_icon.BalloonTipTitle = "NetTray";
+					tray_icon.BalloonTipText = args.UserState as String;
+					tray_icon.ShowBalloonTip(dis_len * 1000);
+				}
+				con_state = args.ProgressPercentage;
+			});
+			bw.RunWorkerAsync(); // Start thread
 		}
 
-		private void exit(object sender, EventArgs e)
+		private void exit(object sender, EventArgs e) // Clicked Exit
 		{
 			Application.Exit();
 		}
 
-		private void refresh(object sender, EventArgs e)
+		private void refresh(object sender, EventArgs e) // Clicked Refresh 
 		{
-			tray_icon.Text = "Fetching...";
-			tray_icon.Text = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip();
+			new_ips = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip(); // Get new IPs
+			tray_icon.Text = new_ips;
+			if(string.Compare(new_ips, cur_ips) != 0) // Check if new IPs are diff from old values
+			{
+				tray_icon.BalloonTipTitle = "NetTray";
+				tray_icon.BalloonTipText = new_ips;
+				tray_icon.ShowBalloonTip(dis_len * 1000);				
+			}
+			cur_ips = new_ips;
 		}
 
-		private void uptime(object sender, EventArgs e)
+		private void uptime(object sender, EventArgs e) // Clicked Uptime
 		{
-			var uptime = new PerformanceCounter("System", "System Up Time");
+			var uptime = new PerformanceCounter("System", "System Up Time"); // Get the system uptime from WMI
 			uptime.NextValue();
-			if((uptime.NextValue()/60/60) > 24)
+			if((uptime.NextValue()/60/60) > 24) // Value is greater than a day
 			{
 				MessageBox.Show("System has been up for " + (int)(uptime.NextValue()/60/60/24) + " days.", "Uptime");
 			}
-			else if((uptime.NextValue()/60) > 60)
+			else if((uptime.NextValue()/60) > 60) // Value is greater than an hour
 			{
 				MessageBox.Show("System has been up for " + (int)(uptime.NextValue()/60/60) + " hours.", "Uptime");
 			}
-			else
+			else // Value is pretty small
 			{
 				MessageBox.Show("System has been up for " + (int)(uptime.NextValue()/60) + " minutes.", "Uptime");
 			}
 		}
 		
-		private void about(object sender, EventArgs e)
+		private void about(object sender, EventArgs e) // Clicked About
 		{
-			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a Ping function to <http://google.com>. Provided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check which defaults to <http://google.com>, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Configuration can be found in the Registry at <HKCU\\Software\\NetTray>.\n\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
 		}
 
-		private void latency(object sender, EventArgs e)
+		private void latency(object sender, EventArgs e) // Clicked Latency
 		{
-			Ping p = new Ping();
-			PingReply r = p.Send("www.google.com");
-			if(r.Status == IPStatus.Success)
+			if(cur_latency != -1) // Latency is known, so show cached value
 			{
-				MessageBox.Show("Round trip to Google: " + r.RoundtripTime.ToString() + "ms.", "Latency");
+				MessageBox.Show("Round trip to " + url + ": " + cur_latency.ToString() + "ms.", "NetTray");
 			}
-			else
+			else // Latency is unknown, so try to ping
 			{
-				MessageBox.Show("Unable to ping Google.", "Latency");
+				Ping p = new Ping();
+				PingReply r = p.Send(url);
+				if(r.Status == IPStatus.Success) // Got a reply
+				{
+					cur_latency = r.RoundtripTime;
+					MessageBox.Show("Round trip to " + url + ": " + cur_latency.ToString() + "ms.", "NetTray");
+				}
+				else // Ping timed out
+				{
+					MessageBox.Show("Unable to ping " + url + ".", "NetTray");
+				}
 			}
 		}
 
-		private void interfaces(object sender, EventArgs e)
+		private void interfaces(object sender, EventArgs e) // Clicked Interfaces
 		{
-			string details = "";
+			string details = ""; // Buffer for text
 			try
 			{
-				foreach(NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces())
+				foreach(NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces()) // Enumerate all interfaces from WMI
 				{
-					if(ni.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || ni.NetworkInterfaceType == NetworkInterfaceType.Ethernet)
+					if(ni.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || ni.NetworkInterfaceType == NetworkInterfaceType.Ethernet) // Only care about ethernet and wifi
 					{
 						details += ni.Name + "\n";
-						foreach(UnicastIPAddressInformation ip in ni.GetIPProperties().UnicastAddresses)
+						foreach(UnicastIPAddressInformation ip in ni.GetIPProperties().UnicastAddresses) // IP addresses
 						{
 							if(ip.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
 							{
@@ -123,7 +220,7 @@ namespace NetTrayNS
 								details += "- IPv6: " + ip.Address.ToString() + "\n";
 							}
 						}
-						foreach(GatewayIPAddressInformation gw in ni.GetIPProperties().GatewayAddresses)
+						foreach(GatewayIPAddressInformation gw in ni.GetIPProperties().GatewayAddresses) // Gateway
 						{
 							if(gw.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
 							{
@@ -143,14 +240,14 @@ namespace NetTrayNS
 			MessageBox.Show(details, "All interfaces");
 		}
 
-		protected override void OnLoad(EventArgs e)
+		protected override void OnLoad(EventArgs e) // Display the tray icon on load
 		{
 			Visible = false;
 			ShowInTaskbar = false;
  			base.OnLoad(e);
 		}
 
-		protected override void Dispose(bool is_disposing)
+		protected override void Dispose(bool is_disposing) // Remove the tray icon on exit
 		{
 			if(is_disposing)
 			{
@@ -159,7 +256,7 @@ namespace NetTrayNS
  			base.Dispose(is_disposing);
 		}
 
-		private string get_private_ip()
+		private string get_private_ip() // Fetch private IP from WMI
 		{
 			string privip = "";
 			try
@@ -185,7 +282,7 @@ namespace NetTrayNS
 			return privip;
 		}
 
-		private string get_public_ip()
+		private string get_public_ip() // Fetch public IP from ipify.org
 		{
 			try
 			{
@@ -199,13 +296,6 @@ namespace NetTrayNS
 			{
 				return "Unknown";
 			}
-		}
-
-		private void loop(object sender, System.Timers.ElapsedEventArgs e)
-		{
-			tray_timer.Stop();
-			tray_icon.Text = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip();
-			tray_timer.Start();
 		}
 	}
 }
