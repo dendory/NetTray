@@ -37,9 +37,10 @@ namespace NetTrayNS
 		private long cur_latency = -1; // Current latency (ms)
 		private RegistryKey rkey; // Registry key to read config values
 		private string log_file = Path.GetTempPath() + "nettray.log"; // Log file
-		private int show_startup = 1;
-		private int log_latency = 1;
-		private StreamWriter logfile;
+		private int show_startup = 1; // Show the startup IP information
+		private int log_latency = 0; // Write every ping to the log
+		private int con_threas = 0; // Counter for 3 pings = no connection
+		private StreamWriter logfile; // Log file holder
 
 		[DllImport("kernel32")]
 		extern static UInt64 GetTickCount64();
@@ -130,7 +131,13 @@ namespace NetTrayNS
 					}
 					else // Timed out on the ping
 					{
-						b.ReportProgress(2, "No network connection detected.");
+						con_threas = con_threas + 1;
+						if(log_latency == 1) logfile.WriteLine(DateTime.Now + " - Latency: Timed out.");
+						if(con_threas > 2)
+						{
+							b.ReportProgress(2, "No network connection detected.");
+							con_threas = 0;
+						}
 					}
 					new_ips = "Private IP: " + get_private_ip() + "\r\nPublic IP: " + get_public_ip(); // Get new IPs
 					tray_icon.Text = new_ips;
