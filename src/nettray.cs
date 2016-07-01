@@ -35,7 +35,13 @@ namespace NetTrayNS
 		private string new_ips = ""; // Latest public and private IPs
 		private int con_state = 0; // Connection state (0 = all fine, 1 = slow latency, 2 = no reply)
 		private long cur_latency = -1; // Current latency (ms)
-		public RegistryKey rkey; // Registry key to read config values
+		private RegistryKey rkey; // Registry key to read config values
+		private string log_file = Path.GetTempPath() + "nettray.log"; // Log file
+		private int show_startup = 1;
+		private StreamWriter logfile;
+
+		[DllImport("kernel32")]
+		extern static UInt64 GetTickCount64();
 
 		[STAThread]
 		static void Main(string[] args)
@@ -53,21 +59,27 @@ namespace NetTrayNS
 				rkey.SetValue("check_interval_in_seconds", interval);
 				rkey.SetValue("minimal_latency_in_ms", min_latency);
 				rkey.SetValue("info_display_length_in_seconds", dis_len);
+				rkey.SetValue("log_file", log_file);
+				rkey.SetValue("show_startup_info", show_startup);
 			}
 			else // Try to load config from registry
 			{
 				try
 				{
+					log_file = (string)rkey.GetValue("log_file");
 					url = (string)rkey.GetValue("latency_check_url");
 					interval = (int)rkey.GetValue("check_interval_in_seconds");
 					min_latency = (int)rkey.GetValue("minimal_latency_in_ms");
 					dis_len = (int)rkey.GetValue("info_display_length_in_seconds");
+					show_startup = (int)rkey.GetValue("show_startup_info");
 				}
 				catch(Exception) // Display message but keep going
 				{
 					MessageBox.Show("An error occured while loading Registy settings. Using default values.", "NetTray");
 				}
 			}
+			logfile = File.AppendText(log_file);
+			logfile.WriteLine(DateTime.Now + " - Starting up.");
 			tray_menu = new ContextMenu(); // Make tray menu
 			tray_menu.MenuItems.Add("Interfaces", interfaces);
 			tray_menu.MenuItems.Add("Latency", latency);
@@ -82,9 +94,13 @@ namespace NetTrayNS
 			tray_icon.Visible = true;
 			new_ips = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip(); // Get private and public IPs
 			tray_icon.Text = new_ips;
-			tray_icon.BalloonTipTitle = "NetTray"; // Show initial IPs info bubble
-			tray_icon.BalloonTipText = new_ips;
-			tray_icon.ShowBalloonTip(dis_len * 1000);
+			logfile.WriteLine(DateTime.Now + " - IP information:\n" + new_ips);
+			if(show_startup == 1)
+			{
+				tray_icon.BalloonTipTitle = "NetTray"; // Show initial IPs info bubble
+				tray_icon.BalloonTipText = new_ips;
+				tray_icon.ShowBalloonTip(dis_len * 1000);
+			}
 			cur_ips = new_ips;
 			BackgroundWorker bw = new BackgroundWorker(); // Thread to check latency and IPs
 			bw.WorkerReportsProgress = true;
@@ -115,6 +131,7 @@ namespace NetTrayNS
 					tray_icon.Text = new_ips;
 					if(string.Compare(new_ips, cur_ips) != 0) // Check if new IPs are diff from old values
 					{
+						logfile.WriteLine(DateTime.Now + " - IP information:\n" + new_ips);
 						tray_icon.BalloonTipTitle = "NetTray";
 						tray_icon.BalloonTipText = new_ips;
 						tray_icon.ShowBalloonTip(dis_len * 1000);				
@@ -127,6 +144,7 @@ namespace NetTrayNS
 			{
 				if(con_state != args.ProgressPercentage) // Check if state changed, if so show bubble with message from thread
 				{
+					logfile.WriteLine(DateTime.Now + " - " + args.UserState as String); 
 					tray_icon.BalloonTipTitle = "NetTray";
 					tray_icon.BalloonTipText = args.UserState as String;
 					tray_icon.ShowBalloonTip(dis_len * 1000);
@@ -138,6 +156,8 @@ namespace NetTrayNS
 
 		private void exit(object sender, EventArgs e) // Clicked Exit
 		{
+			logfile.WriteLine(DateTime.Now + " - Shutting down.");
+			logfile.Close();
 			Application.Exit();
 		}
 
@@ -147,6 +167,7 @@ namespace NetTrayNS
 			tray_icon.Text = new_ips;
 			if(string.Compare(new_ips, cur_ips) != 0) // Check if new IPs are diff from old values
 			{
+				logfile.WriteLine(DateTime.Now + " - IP information:\n" + new_ips);
 				tray_icon.BalloonTipTitle = "NetTray";
 				tray_icon.BalloonTipText = new_ips;
 				tray_icon.ShowBalloonTip(dis_len * 1000);				
@@ -156,25 +177,13 @@ namespace NetTrayNS
 
 		private void uptime(object sender, EventArgs e) // Clicked Uptime
 		{
-			var uptime = new PerformanceCounter("System", "System Up Time"); // Get the system uptime from WMI
-			uptime.NextValue();
-			if((uptime.NextValue()/60/60) > 24) // Value is greater than a day
-			{
-				MessageBox.Show("System has been up for " + (int)(uptime.NextValue()/60/60/24) + " days.", "Uptime");
-			}
-			else if((uptime.NextValue()/60) > 60) // Value is greater than an hour
-			{
-				MessageBox.Show("System has been up for " + (int)(uptime.NextValue()/60/60) + " hours.", "Uptime");
-			}
-			else // Value is pretty small
-			{
-				MessageBox.Show("System has been up for " + (int)(uptime.NextValue()/60) + " minutes.", "Uptime");
-			}
+			var uptime = TimeSpan.FromMilliseconds(GetTickCount64());
+			MessageBox.Show("System has been up for " + uptime.ToString(), "Uptime");
 		}
 		
 		private void about(object sender, EventArgs e) // Clicked About
 		{
-			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check which defaults to <http://google.com>, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Configuration can be found in the Registry at <HKCU\\Software\\NetTray>.\n\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check which defaults to <http://google.com>, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Log of connection issues is at <" + log_file + ">, configuration values can be found in the Registry at <HKCU\\Software\\NetTray>.\n\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
 		}
 
 		private void latency(object sender, EventArgs e) // Clicked Latency
