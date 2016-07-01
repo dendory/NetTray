@@ -38,6 +38,7 @@ namespace NetTrayNS
 		private RegistryKey rkey; // Registry key to read config values
 		private string log_file = Path.GetTempPath() + "nettray.log"; // Log file
 		private int show_startup = 1;
+		private int log_latency = 1;
 		private StreamWriter logfile;
 
 		[DllImport("kernel32")]
@@ -61,6 +62,7 @@ namespace NetTrayNS
 				rkey.SetValue("info_display_length_in_seconds", dis_len);
 				rkey.SetValue("log_file", log_file);
 				rkey.SetValue("show_startup_info", show_startup);
+				rkey.SetValue("write_latency_to_log", log_latency);
 			}
 			else // Try to load config from registry
 			{
@@ -72,6 +74,7 @@ namespace NetTrayNS
 					min_latency = (int)rkey.GetValue("minimal_latency_in_ms");
 					dis_len = (int)rkey.GetValue("info_display_length_in_seconds");
 					show_startup = (int)rkey.GetValue("show_startup_info");
+					log_latency = (int)rkey.GetValue("write_latency_to_log");
 				}
 				catch(Exception) // Display message but keep going
 				{
@@ -79,6 +82,7 @@ namespace NetTrayNS
 				}
 			}
 			logfile = File.AppendText(log_file);
+			logfile.AutoFlush = true;
 			logfile.WriteLine(DateTime.Now + " - Starting up.");
 			tray_menu = new ContextMenu(); // Make tray menu
 			tray_menu.MenuItems.Add("Interfaces", interfaces);
@@ -92,9 +96,9 @@ namespace NetTrayNS
 			tray_icon.Icon = new Icon(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("res.notify_icon"));
 			tray_icon.ContextMenu = tray_menu;
 			tray_icon.Visible = true;
-			new_ips = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip(); // Get private and public IPs
+			new_ips = "Private IP: " + get_private_ip() + "\r\nPublic IP: " + get_public_ip(); // Get private and public IPs
 			tray_icon.Text = new_ips;
-			logfile.WriteLine(DateTime.Now + " - IP information:\n" + new_ips);
+			logfile.WriteLine(DateTime.Now + " - IP information:\r\n" + new_ips);
 			if(show_startup == 1)
 			{
 				tray_icon.BalloonTipTitle = "NetTray"; // Show initial IPs info bubble
@@ -122,16 +126,17 @@ namespace NetTrayNS
 							b.ReportProgress(0, "Connection restored.");
 						}
 						cur_latency = r.RoundtripTime; // Store latency for later use
+						if(log_latency == 1) logfile.WriteLine(DateTime.Now + " - Latency: " + cur_latency.ToString() + " ms.");
 					}
 					else // Timed out on the ping
 					{
 						b.ReportProgress(2, "No network connection detected.");
 					}
-					new_ips = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip(); // Get new IPs
+					new_ips = "Private IP: " + get_private_ip() + "\r\nPublic IP: " + get_public_ip(); // Get new IPs
 					tray_icon.Text = new_ips;
 					if(string.Compare(new_ips, cur_ips) != 0) // Check if new IPs are diff from old values
 					{
-						logfile.WriteLine(DateTime.Now + " - IP information:\n" + new_ips);
+						logfile.WriteLine(DateTime.Now + " - IP information:\r\n" + new_ips);
 						tray_icon.BalloonTipTitle = "NetTray";
 						tray_icon.BalloonTipText = new_ips;
 						tray_icon.ShowBalloonTip(dis_len * 1000);				
@@ -163,11 +168,11 @@ namespace NetTrayNS
 
 		private void refresh(object sender, EventArgs e) // Clicked Refresh 
 		{
-			new_ips = "Private IP: " + get_private_ip() + "\nPublic IP: " + get_public_ip(); // Get new IPs
+			new_ips = "Private IP: " + get_private_ip() + "\r\nPublic IP: " + get_public_ip(); // Get new IPs
 			tray_icon.Text = new_ips;
 			if(string.Compare(new_ips, cur_ips) != 0) // Check if new IPs are diff from old values
 			{
-				logfile.WriteLine(DateTime.Now + " - IP information:\n" + new_ips);
+				logfile.WriteLine(DateTime.Now + " - IP information:\r\n" + new_ips);
 				tray_icon.BalloonTipTitle = "NetTray";
 				tray_icon.BalloonTipText = new_ips;
 				tray_icon.ShowBalloonTip(dis_len * 1000);				
@@ -183,7 +188,7 @@ namespace NetTrayNS
 		
 		private void about(object sender, EventArgs e) // Clicked About
 		{
-			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check which defaults to <http://google.com>, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Log of connection issues is at <" + log_file + ">, configuration values can be found in the Registry at <HKCU\\Software\\NetTray>.\n\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check which defaults to <http://google.com>, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Log of connection issues is at <" + log_file + ">, configuration values can be found in the Registry at <HKCU\\Software\\NetTray>.\r\n\r\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
 		}
 
 		private void latency(object sender, EventArgs e) // Clicked Latency
@@ -217,28 +222,28 @@ namespace NetTrayNS
 				{
 					if(ni.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || ni.NetworkInterfaceType == NetworkInterfaceType.Ethernet) // Only care about ethernet and wifi
 					{
-						details += ni.Name + "\n";
+						details += ni.Name + "\r\n";
 						foreach(UnicastIPAddressInformation ip in ni.GetIPProperties().UnicastAddresses) // IP addresses
 						{
 							if(ip.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
 							{
-								details += "- IP: " + ip.Address.ToString() + "\n";
+								details += "- IP: " + ip.Address.ToString() + "\r\n";
 							}
 							if(ip.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
 							{
-								details += "- IPv6: " + ip.Address.ToString() + "\n";
+								details += "- IPv6: " + ip.Address.ToString() + "\r\n";
 							}
 						}
 						foreach(GatewayIPAddressInformation gw in ni.GetIPProperties().GatewayAddresses) // Gateway
 						{
 							if(gw.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
 							{
-								details += "- Gateway: " + gw.Address.ToString() + "\n";
+								details += "- Gateway: " + gw.Address.ToString() + "\r\n";
 							}
 						}
-						details += "- Type: " + ni.NetworkInterfaceType.ToString() + " (" + ni.OperationalStatus.ToString()  + ")\n";
-						details += "- Speed: " + Int64.Parse(ni.Speed.ToString()) / 1000000 + " mbps\n";
-						details += "\n";
+						details += "- Type: " + ni.NetworkInterfaceType.ToString() + " (" + ni.OperationalStatus.ToString()  + ")\r\n";
+						details += "- Speed: " + Int64.Parse(ni.Speed.ToString()) / 1000000 + " mbps\r\n";
+						details += "\r\n";
 					}
 				}
 			}
