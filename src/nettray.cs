@@ -118,6 +118,7 @@ namespace NetTrayNS
 					PingReply r = p.Send(url);
 					if(r.Status == IPStatus.Success) // We got a ping reply
 					{
+						con_threas = 0;
 						if(r.RoundtripTime > min_latency) // Latency is above minimum acceptable value
 						{
 							b.ReportProgress(1, "Slow network connection detected: " + r.RoundtripTime.ToString() + "ms.");
