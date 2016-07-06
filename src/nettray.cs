@@ -4,6 +4,7 @@
 
 using System;
 using System.IO;
+using System.Net;
 using System.Text;
 using System.Drawing;
 using System.Threading;
@@ -19,7 +20,7 @@ using Microsoft.Win32;
 
 [assembly: AssemblyTitle("NetTray")]
 [assembly: AssemblyCopyright("(C) 2016 Patrick Lambert")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace NetTrayNS
 {
@@ -41,6 +42,7 @@ namespace NetTrayNS
 		private int log_latency = 0; // Write every ping to the log
 		private int con_threas = 0; // Counter for 3 pings = no connection
 		private StreamWriter logfile; // Log file holder
+		private string lookup_name = ""; // Buffer for lookup value 
 
 		[DllImport("kernel32")]
 		extern static UInt64 GetTickCount64();
@@ -88,6 +90,7 @@ namespace NetTrayNS
 			tray_menu = new ContextMenu(); // Make tray menu
 			tray_menu.MenuItems.Add("Interfaces", interfaces);
 			tray_menu.MenuItems.Add("Latency", latency);
+			tray_menu.MenuItems.Add("Lookup", nslookup);
 			tray_menu.MenuItems.Add("Uptime", uptime);
 			tray_menu.MenuItems.Add("Refresh", refresh);
 			tray_menu.MenuItems.Add("About", about);
@@ -167,6 +170,27 @@ namespace NetTrayNS
 			bw.RunWorkerAsync(); // Start thread
 		}
 
+		public static string input(string title, string text, string value) // Show a prompt on the screen for user input
+		{
+			Form prompt = new Form()
+			{
+				Width = 300,
+				Height = 150,
+				FormBorderStyle = FormBorderStyle.FixedDialog,
+				Text = title,
+				StartPosition = FormStartPosition.CenterScreen
+			};
+			Label textLabel = new Label() { Left = 50, Top=20, Width=200, Text=text };
+			TextBox textBox = new TextBox() { Left = 50, Top=50, Width=200, Text=value };
+			Button confirmation = new Button() { Text = "Ok", Left=150, Width=100, Top=80, DialogResult = DialogResult.OK };
+			confirmation.Click += (sender, e) => { prompt.Close(); };
+			prompt.Controls.Add(textBox);
+			prompt.Controls.Add(confirmation);
+			prompt.Controls.Add(textLabel);
+			prompt.AcceptButton = confirmation;
+ 			return prompt.ShowDialog() == DialogResult.OK ? textBox.Text : "";
+		}
+
 		private void exit(object sender, EventArgs e) // Clicked Exit
 		{
 			logfile.WriteLine(DateTime.Now + " - Shutting down.");
@@ -174,7 +198,32 @@ namespace NetTrayNS
 			Application.Exit();
 		}
 
-		private void refresh(object sender, EventArgs e) // Clicked Refresh 
+		private void nslookup(object sender, EventArgs e) // Clicked Lookup
+		{
+			string result = "Unknown";
+			lookup_name = input("NetTray", "Enter a hostname or IP address:", lookup_name);
+			try // Try to resolve hostname from ip
+			{
+				IPAddress hostIPAddress = IPAddress.Parse(lookup_name);
+				IPHostEntry hostInfo = Dns.GetHostEntry(hostIPAddress);
+				result = hostInfo.HostName;
+			}
+			catch (Exception)
+			{
+				try // If it didn't work, we probably need to resolve ip from hostname
+				{
+					IPHostEntry hostEntry = Dns.GetHostEntry(lookup_name);
+					var ip = hostEntry.AddressList[0];
+					result = ip.ToString();
+				}
+				catch(Exception){} // Not a valid hostname or ip
+			}
+			tray_icon.BalloonTipTitle = "NetTray";
+			tray_icon.BalloonTipText = lookup_name + " = " + result;
+			tray_icon.ShowBalloonTip(dis_len * 1000);
+		}
+
+		private void refresh(object sender, EventArgs e) // Clicked Refresh
 		{
 			new_ips = "Private IP: " + get_private_ip() + "\r\nPublic IP: " + get_public_ip(); // Get new IPs
 			tray_icon.Text = new_ips;
@@ -183,7 +232,7 @@ namespace NetTrayNS
 				logfile.WriteLine(DateTime.Now + " - IP information:\r\n" + new_ips);
 				tray_icon.BalloonTipTitle = "NetTray";
 				tray_icon.BalloonTipText = new_ips;
-				tray_icon.ShowBalloonTip(dis_len * 1000);				
+				tray_icon.ShowBalloonTip(dis_len * 1000);
 			}
 			cur_ips = new_ips;
 		}
@@ -193,7 +242,7 @@ namespace NetTrayNS
 			var uptime = TimeSpan.FromMilliseconds(GetTickCount64());
 			MessageBox.Show("System has been up for " + uptime.ToString(), "Uptime");
 		}
-		
+
 		private void about(object sender, EventArgs e) // Clicked About
 		{
 			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check which defaults to <http://google.com>, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Log of connection issues is at <" + log_file + ">, configuration values can be found in the Registry at <HKCU\\Software\\NetTray>.\r\n\r\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
