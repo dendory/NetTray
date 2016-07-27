@@ -218,9 +218,7 @@ namespace NetTrayNS
 				}
 				catch(Exception){} // Not a valid hostname or ip
 			}
-			tray_icon.BalloonTipTitle = "NetTray";
-			tray_icon.BalloonTipText = lookup_name + " = " + result;
-			tray_icon.ShowBalloonTip(dis_len * 1000);
+			MessageBox.Show(lookup_name + " = " + result, "Lookup");
 		}
 
 		private void refresh(object sender, EventArgs e) // Clicked Refresh
@@ -240,7 +238,7 @@ namespace NetTrayNS
 		private void uptime(object sender, EventArgs e) // Clicked Uptime
 		{
 			var uptime = TimeSpan.FromMilliseconds(GetTickCount64());
-			MessageBox.Show("System has been up for " + uptime.ToString(), "Uptime");
+			MessageBox.Show("System has been up for " + uptime.Days + " days and  " + uptime.Hours + " hours.", "Uptime");
 		}
 
 		private void about(object sender, EventArgs e) // Clicked About
