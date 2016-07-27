@@ -28,7 +28,7 @@ namespace NetTrayNS
 	{
 		private NotifyIcon tray_icon; // The tray icon itself
 		private ContextMenu tray_menu; // The right click menu
-		private int interval = 5; // Interval used to check public IP and latency
+		private int interval = 1; // Interval used to check public IP and latency
 		private string url = "www.google.com"; // URL to ping for latency
 		private int min_latency = 500; // Minimum latency (ms) until slow connection is reported
 		private int dis_len = 10; // How long (secs) to display info bubbles
@@ -245,7 +245,7 @@ namespace NetTrayNS
 
 		private void about(object sender, EventArgs e) // Clicked About
 		{
-			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check which defaults to <http://google.com>, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Log of connection issues is at <" + log_file + ">, configuration values can be found in the Registry at <HKCU\\Software\\NetTray>.\r\n\r\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check to <" + url + "> every " + interval + "s, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Log of connection issues is at <" + log_file + ">, configuration values can be found in the Registry at <HKCU\\Software\\NetTray>.\r\n\r\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
 		}
 
 		private void latency(object sender, EventArgs e) // Clicked Latency
@@ -298,7 +298,7 @@ namespace NetTrayNS
 								details += "- Gateway: " + gw.Address.ToString() + "\r\n";
 							}
 						}
-						details += "- Type: " + ni.NetworkInterfaceType.ToString() + " (" + ni.OperationalStatus.ToString()  + ")\r\n";
+						details += "- Type: " + ni.NetworkInterfaceType.ToString() + " (" + ni.OperationalStatus.ToString() + ")\r\n";
 						details += "- Speed: " + Int64.Parse(ni.Speed.ToString()) / 1000000 + " mbps\r\n";
 						details += "\r\n";
 					}
