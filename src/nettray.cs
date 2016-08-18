@@ -20,7 +20,7 @@ using Microsoft.Win32;
 
 [assembly: AssemblyTitle("NetTray")]
 [assembly: AssemblyCopyright("(C) 2016 Patrick Lambert")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace NetTrayNS
 {
@@ -43,6 +43,7 @@ namespace NetTrayNS
 		private int con_threas = 0; // Counter for 3 pings = no connection
 		private StreamWriter logfile; // Log file holder
 		private string lookup_name = ""; // Buffer for lookup value 
+		private string url_name = "http://"; // Buffer for url value 
 
 		[DllImport("kernel32")]
 		extern static UInt64 GetTickCount64();
@@ -91,8 +92,10 @@ namespace NetTrayNS
 			tray_menu.MenuItems.Add("Interfaces", interfaces);
 			tray_menu.MenuItems.Add("Latency", latency);
 			tray_menu.MenuItems.Add("Lookup", nslookup);
+			tray_menu.MenuItems.Add("Test website", testwebsite);
 			tray_menu.MenuItems.Add("Uptime", uptime);
 			tray_menu.MenuItems.Add("Refresh", refresh);
+			tray_menu.MenuItems.Add("View log", viewlog);
 			tray_menu.MenuItems.Add("About", about);
 			tray_menu.MenuItems.Add("-");
 			tray_menu.MenuItems.Add("Exit", exit);
@@ -198,10 +201,15 @@ namespace NetTrayNS
 			Application.Exit();
 		}
 
+		private void viewlog(object sender, EventArgs e) // Clicked View log
+		{
+			Process.Start(log_file);
+		}
+
 		private void nslookup(object sender, EventArgs e) // Clicked Lookup
 		{
 			string result = "Unknown";
-			lookup_name = input("NetTray", "Enter a hostname or IP address:", lookup_name);
+			lookup_name = input("Lookup", "Enter a hostname or IP address:", lookup_name);
 			try // Try to resolve hostname from ip
 			{
 				IPAddress hostIPAddress = IPAddress.Parse(lookup_name);
@@ -221,6 +229,34 @@ namespace NetTrayNS
 			MessageBox.Show(lookup_name + " = " + result, "Lookup");
 		}
 
+		private void testwebsite(object sender, EventArgs e) // Clicked Test website
+		{
+			HttpWebResponse result;
+			url_name = input("Test website", "Enter a valid URL:", url_name);
+			try // Try to connect
+			{
+				HttpWebRequest req = WebRequest.Create(url_name) as HttpWebRequest;
+				result = req.GetResponse() as HttpWebResponse;
+			}
+			catch (WebException ex)
+			{
+				result = ex.Response as HttpWebResponse;
+			}
+			catch (Exception) // Crazy how many different ways it can fail
+			{
+				MessageBox.Show("Could not connect to " + url_name + ".", "Test website");
+				return;
+			}
+			if(result != null)
+			{
+				MessageBox.Show("Status of " + url_name + ": " + result.StatusCode, "Test website");
+			}
+			else
+			{
+				MessageBox.Show("Could not connect to " + url_name + ".", "Test website");
+			}
+		}
+
 		private void refresh(object sender, EventArgs e) // Clicked Refresh
 		{
 			new_ips = "Private IP: " + get_private_ip() + "\r\nPublic IP: " + get_public_ip(); // Get new IPs
@@ -238,19 +274,19 @@ namespace NetTrayNS
 		private void uptime(object sender, EventArgs e) // Clicked Uptime
 		{
 			var uptime = TimeSpan.FromMilliseconds(GetTickCount64());
-			MessageBox.Show("System has been up for " + uptime.Days + " days and  " + uptime.Hours + " hours.", "Uptime");
+			MessageBox.Show("System has been up for " + uptime.Days + " days and " + uptime.Hours + " hours.", "Uptime");
 		}
 
 		private void about(object sender, EventArgs e) // Clicked About
 		{
-			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check to <" + url + "> every " + interval + "s, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Log of connection issues is at <" + log_file + ">, configuration values can be found in the Registry at <HKCU\\Software\\NetTray>.\r\n\r\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "NetTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			MessageBox.Show("This app fetches your current public IP address from <http://ipify.org> and your private IP addresses from your local interfaces. It also provides a latency check to <" + url + "> every " + interval + "s, and will alert you if your IP changes, latency becomes too bad, or your network connection drops. Log of connection issues is at <" + log_file + ">, configuration values can be found in the Registry at <HKCU\\Software\\NetTray>.\r\n\r\nProvided under the MIT License by Patrick Lambert <http://dendory.net>.", "About", MessageBoxButtons.OK, MessageBoxIcon.Information);
 		}
 
 		private void latency(object sender, EventArgs e) // Clicked Latency
 		{
 			if(cur_latency != -1) // Latency is known, so show cached value
 			{
-				MessageBox.Show("Round trip to " + url + ": " + cur_latency.ToString() + "ms.", "NetTray");
+				MessageBox.Show("Round trip to " + url + ": " + cur_latency.ToString() + "ms.", "Latency");
 			}
 			else // Latency is unknown, so try to ping
 			{
@@ -259,11 +295,11 @@ namespace NetTrayNS
 				if(r.Status == IPStatus.Success) // Got a reply
 				{
 					cur_latency = r.RoundtripTime;
-					MessageBox.Show("Round trip to " + url + ": " + cur_latency.ToString() + "ms.", "NetTray");
+					MessageBox.Show("Round trip to " + url + ": " + cur_latency.ToString() + "ms.", "Latency");
 				}
 				else // Ping timed out
 				{
-					MessageBox.Show("Unable to ping " + url + ".", "NetTray");
+					MessageBox.Show("Unable to ping " + url + ".", "Latency");
 				}
 			}
 		}
